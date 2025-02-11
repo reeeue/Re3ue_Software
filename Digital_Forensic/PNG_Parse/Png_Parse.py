@@ -11,8 +11,8 @@ PNG_FOOTER_SIGNATURE = b'\x49\x45\x4E\x44\xAE\x42\x60\x82' # 8 Bytes
 class PNGParse :
     """
     """
-    def __init__(self, filePath) :
-        self.filePath = filePath
+    def __init__(self, file_path) :
+        self.file_path = file_path
         self.chunks = []
     
     """
@@ -21,8 +21,8 @@ class PNGParse :
         png_header_signature = f.read(8)
 
         if png_header_signature != PNG_HEADER_SIGNATURE :
-            print("[ ERROR ] FAIL - PNG ( Header ) Signature")
-            print(f">>>>>>>>>> File Path : {self.filePath}")
+            print("\n[ ERROR ] FAIL - PNG ( Header ) Signature")
+            print(f">>>>>>>>>> File Path : {self.file_path}")
             sys.exit(1)
         
         print(f"\n# PNG ( Header ) Signature")
@@ -35,8 +35,8 @@ class PNGParse :
         png_footer_signature = f.read(8)
 
         if png_footer_signature != PNG_FOOTER_SIGNATURE :
-            print("[ ERROR ] FAIL - PNG ( Footer ) Signature")
-            print(f">>>>>>>>>> File Path : {self.filePath}")
+            print("\n[ ERROR ] FAIL - PNG ( Footer ) Signature")
+            print(f">>>>>>>>>> File Path : {self.file_path}")
             sys.exit(1)
         
         print(f"\n# PNG ( Footer ) Signature")
@@ -93,7 +93,7 @@ class PNGParse :
             crc_result = self.get_crc_result(chunk_type, chunk_data, chunk_crc)
 
             if crc_result == False :
-                print("[ ERROR ] FAIL - CRC (Integrity)")
+                print("\n[ ERROR ] FAIL - CRC (Integrity)")
                 print(f">>>>>>>>>> Chunk Index : {chunk_index}")
                 print(f">>>>>>>>>> Chunk Name : {chunk_name}")
                 sys.exit(1)
@@ -123,7 +123,7 @@ class PNGParse :
     def parse(self) :
         print("Program Start.")
 
-        with open(self.filePath, "rb") as f :
+        with open(self.file_path, "rb") as f :
             # 1. PNG ( Header ) Signature
             self.get_png_header_signature(f)
             # 2. Chunks
