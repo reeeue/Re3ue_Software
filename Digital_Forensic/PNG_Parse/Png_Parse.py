@@ -17,21 +17,6 @@ class PNGParse :
     
     """
     """
-    def parse(self) :
-        print("Program Start.")
-
-        with open(self.filePath, "rb") as f :
-            # 1. PNG ( Header ) Signature
-            self.get_png_header_signature(f)
-            # 2. Chunks
-            self.get_chunks(f)
-            # 3. PNG ( Footer ) Signature
-            self.get_png_footer_signature(f)
-
-        print("Program End.")
-    
-    """
-    """
     def get_png_header_signature(self, f) :
         png_header_signature = f.read(8)
 
@@ -40,8 +25,8 @@ class PNGParse :
             print(f">>>>>>>>>> File Path : {self.filePath}")
             sys.exit(1)
         
-        print(f"# PNG ( Header ) Signature")
-        print("".join(f'{byte:02X}' for byte in png_header_signature))
+        print(f"\n# PNG ( Header ) Signature")
+        print(" ".join(f'{byte:02X}' for byte in png_header_signature))
     
     """
     """
@@ -54,13 +39,48 @@ class PNGParse :
             print(f">>>>>>>>>> File Path : {self.filePath}")
             sys.exit(1)
         
-        print(f"# PNG ( Footer ) Signature")
-        print("".join(f'{byte:02X}' for byte in png_footer_signature))
+        print(f"\n# PNG ( Footer ) Signature")
+        print(" ".join(f'{byte:02X}' for byte in png_footer_signature))
+    
+    """
+    """
+    def get_chunk(self, f) :
+        chunk_length = struct.unpack(">I", f.read(4))[0]
+        chunk_type = f.read(4)
+        chunk_data = f.read(chunk_length)
+        chunk_crc = struct.unpack(">I", f.read(4))[0]
+
+        chunk_name = chunk_type.decode()
+
+        print(f"[ * ] Chunk - {chunk_name}")
+
+        return chunk_length, chunk_type, chunk_data, chunk_crc, chunk_name
+
+    """
+    """
+    def get_crc_result(self, chunk_type, chunk_data, chunk_crc) :
+        crc = zlib.crc32(chunk_type + chunk_data)
+
+        return crc == chunk_crc
+
+    """
+    Chunk : IHDR
+    """
+    def get_color_type(self, color_type_number) :
+        color_types = {
+            0 : "Gray Scale",
+            2 : "RGB",
+            3 : "Indexed Color ( Palette )",
+            4 : "Gray Scale with Alph",
+            6 : "RGB with Alpha"
+        }
+
+        return color_types.get(color_type_number, "Can't Find")
 
     """
     """
     def get_chunks(self, f) :
-        print("# Chunks")
+        print("\n# Chunks")
 
         chunk_list = []
         chunk_index = 1
@@ -77,33 +97,41 @@ class PNGParse :
                 print(f">>>>>>>>>> Chunk Index : {chunk_index}")
                 print(f">>>>>>>>>> Chunk Name : {chunk_name}")
                 sys.exit(1)
+
+            if chunk_name == "IHDR" :
+                width, height, bit_depth, color_type_number, compression_mothod, filter_method, interlace_method = struct.unpack(">IIBBBBB", chunk_data)
+
+                color_type = self.get_color_type(color_type_number)
+
+                print("  => Chunk Information - IHDR")
+                print(f"    [ + ] Wdith : {width}")
+                print(f"    [ + ] Height : {height}")
+                print(f"    [ + ] Bit Depth : {bit_depth}")
+                print(f"    [ + ] Color Type : {color_type_number} ( {color_type} )")
+                print(f"    [ + ] Compression ( Method ) : {compression_mothod}")
+                print(f"    [ + ] Filter ( Method ) : {filter_method}")
+                print(f"    [ + ] Interlace ( Method ) : {interlace_method}")
             
             if chunk_name == "IEND" :
-                print("# Chunk List")
+                print("\n# Chunk List")
                 print(chunk_list)
 
                 break
-            
+    
     """
     """
-    def get_chunk(self, f) :
-        chunk_length = struct.unpack(">I", f.read(4))[0]
-        chunk_type = f.read(4)
-        chunk_data = f.read(chunk_length)
-        chunk_crc = struct.unpack(">I", f.read(4))[0]
+    def parse(self) :
+        print("Program Start.")
 
-        chunk_name = chunk_type.decode()
+        with open(self.filePath, "rb") as f :
+            # 1. PNG ( Header ) Signature
+            self.get_png_header_signature(f)
+            # 2. Chunks
+            self.get_chunks(f)
+            # 3. PNG ( Footer ) Signature
+            self.get_png_footer_signature(f)
 
-        print(f"# Chunk - {chunk_name}")
-
-        return chunk_length, chunk_type, chunk_data, chunk_crc, chunk_name
-
-    """
-    """
-    def get_crc_result(self, chunk_type, chunk_data, chunk_crc) :
-        crc = zlib.crc32(chunk_type + chunk_data)
-
-        return crc == chunk_crc
+        print("\nProgram End.")
 
 # Main
 if __name__ == "__main__" :
