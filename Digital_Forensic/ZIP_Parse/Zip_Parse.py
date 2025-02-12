@@ -186,9 +186,9 @@ class ZIPParse :
 if __name__ == "__main__" :
     # How to Use
     if len(sys.argv) != 2 :
-        print("How to Use : python ZIPParse.py < ZIP File Path >")
+        print("How to Use : python ZIP_Parse.py < ZIP File Path >")
         sys.exit(1)
     
-    pe_file = sys.argv[1]
-    parse = ZIPParse(pe_file)
+    zip_file = sys.argv[1]
+    parse = ZIPParse(zip_file)
     parse.parse()

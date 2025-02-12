@@ -53,15 +53,19 @@ class PNGParse :
         chunk_name = chunk_type.decode()
 
         print(f"[ * ] Chunk - {chunk_name}")
+        print(f"    [ + ] Chunk Length - {chunk_length}")
+        print(f"    [ + ] Chunk Type - {chunk_type}")
+        # print(f"    [ + ] Chunk Data - {chunk_data}")
+        print(f"    [ + ] Chunk CRC - {chunk_crc}")
 
         return chunk_length, chunk_type, chunk_data, chunk_crc, chunk_name
 
     """
     """
-    def get_crc_result(self, chunk_type, chunk_data, chunk_crc) :
-        crc = zlib.crc32(chunk_type + chunk_data)
+    def get_true_crc(self, chunk_type, chunk_data, chunk_crc) :
+        true_crc = zlib.crc32(chunk_type + chunk_data)
 
-        return crc == chunk_crc
+        return true_crc
 
     """
     Chunk : IHDR
@@ -90,12 +94,16 @@ class PNGParse :
 
             chunk_list.append(chunk_name)
 
-            crc_result = self.get_crc_result(chunk_type, chunk_data, chunk_crc)
+            true_crc = self.get_true_crc(chunk_type, chunk_data, chunk_crc)
+
+            crc_result = ( true_crc == chunk_crc )
 
             if crc_result == False :
                 print("\n[ ERROR ] FAIL - CRC (Integrity)")
                 print(f">>>>>>>>>> Chunk Index : {chunk_index}")
                 print(f">>>>>>>>>> Chunk Name : {chunk_name}")
+                print(f">>>>>>>>>> TRUE CRC : {true_crc}")
+                print(f">>>>>>>>>> FALSE CRC ( In File ) : {chunk_crc}")
                 sys.exit(1)
 
             if chunk_name == "IHDR" :
@@ -137,7 +145,7 @@ class PNGParse :
 if __name__ == "__main__" :
     # How to Use
     if len(sys.argv) != 2 :
-        print("How to Use : python PNGParse.py < PNG File Path >")
+        print("How to Use : python PNG_Parse.py < PNG File Path >")
         sys.exit(1)
     
     png_file = sys.argv[1]
