@@ -88,7 +88,7 @@ class FAT32Parse :
             print(f"Partition Type : {self.print_hex(partition["partition_type"])}")
             print(f"Ending CHS Address : {self.print_hex(partition["ending_chs_address"])}")
             print(f"Starting LBA Address : {self.print_hex(partition["starting_lba_address"])} ( Sector )")
-            print(f"Size in Sector : {self.print_hex(partition["size_in_sector"])}")
+            print(f"Total Sectors ( Size in Sector ) : {self.print_hex(partition["size_in_sector"])}")
     
             partition_list.append(partition)
         
