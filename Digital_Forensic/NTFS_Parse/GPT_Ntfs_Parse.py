@@ -187,7 +187,6 @@ class NTFSParse :
         if oem_id != NTFS_OEM_ID :
             return False
         
-
         if vbr_signature != VBR_SIGNATURE :
             print("\n[ ERROR ] FAIL - VBR Signature ( 55 AA )")
             print(f">>>>>>>>>> File Path : {self.file_path}")
@@ -308,6 +307,73 @@ class NTFSParse :
             attribute_offset += int.from_bytes(length_of_attribute, byteorder='little')
         
         return 0
+    
+
+
+
+
+
+
+
+
+
+    """
+    NTFS - MFT Entries - $Bitmap
+    """
+    def get_deleted_file_list(self, f, bitmap_data) :
+        print()
+
+    """
+    NTFS - MFT Entries
+    """
+    def restore_file(self, f) :
+        print()
+
+
+
+
+
+
+
+
+
+
+    """
+    NTFS - MFT Entries - MFT Entry - ( MFT Entry) Content ( Non-Resident ) : Run List - Data
+    """
+    def get_run_list_data(self, f, run_list, start_vcn_of_run_list, end_vcn_of_run_list, data_size) :
+        run_list_data = 0
+
+        # ( ... )
+
+        return run_list_data
+    
+    """
+    NTFS - MFT Entries - MFT Entry - ( MFT Entry) Content ( Non-Resident ) : Run List
+    """
+    def get_run_list(self, mft_entry, attribute_offset, offset_of_run_list) :
+        run_list = []
+
+        current_offset = attribute_offset + offset_of_run_list
+
+        while True :
+            first_byte = mft_entry[current_offset]
+
+            # End
+            if first_byte == 0x00 :
+                break
+
+            length_of_size = first_byte & 0x0F
+            length_of_offset = (first_byte >> 4) & 0x0F
+
+            cluster_data_size = int.from_bytes(mft_entry[current_offset+1:current_offset+1+length_of_size], byteorder='little')
+            cluster_data_offset = int.from_bytes(mft_entry[current_offset+1+length_of_size:current_offset+1+length_of_size+length_of_offset], byteorder='little')
+
+            run_list.append((cluster_data_offset, cluster_data_size))
+
+            current_offset += 1 + length_of_size + length_of_offset
+
+        return run_list
 
     """
     NTFS - MFT Entries - MFT Entry
@@ -357,11 +423,6 @@ class NTFSParse :
             if mft_entry_header_signature != MFT_ENTRY_HEADER_SIGNATURE :
                 continue
 
-            is_deleted_file = False
-
-            if (int.from_bytes(mft_entry_flags, byteorder='little') == 0) or (int.from_bytes(allocated_size_of_mft_entry, byteorder='little') == 0) :
-                is_deleted_file = True
-                
             # MFT Entry - Attribute Header
             attribute_offset = int.from_bytes(offset_of_file_attribute, byteorder='little')
 
@@ -409,29 +470,85 @@ class NTFSParse :
                         file_name_bytes = mft_entry[file_name_offset : file_name_offset + (file_name_length * 2)]
                         file_name = file_name_bytes.decode('utf-16-le', errors='ignore').strip("\x00")
 
-                    # MFT Entry - Attribute Header - Non-Resident : [ To - Do ]
+                        # $Bitmap
+                        if file_name == "$Bitmap" :
+
+                            # Before Start of $Bitmap
+                            save_attribute_offset = attribute_offset
+                            save_mft_entry = mft_entry
+
+                            # MFT Entry - Attribute Header
+                            attribute_offset = int.from_bytes(offset_of_file_attribute, byteorder='little')
+
+                            while attribute_offset < mft_entry_size :
+                                # print(f"[ DEBUG ] Attribute Offset : {attribute_offset}")
+
+                                attribute_header_data = mft_entry[attribute_offset:attribute_offset+16]
+
+                                attribute_type_id = int.from_bytes(attribute_header_data[0:4], byteorder='little')
+                                length_of_attribute = int.from_bytes(attribute_header_data[4:8], byteorder='little')
+                                non_resident_flag = int.from_bytes(attribute_header_data[8:9], byteorder='little')
+                                length_of_name = int.from_bytes(attribute_header_data[9:10], byteorder='little')
+                                offset_to_name = int.from_bytes(attribute_header_data[10:12], byteorder='little')
+                                attribute_flags = attribute_header_data[12:14]
+                                attribute_identifier = attribute_header_data[14:16]
+
+                                # End
+                                if attribute_type_id == 0xFFFFFFFF :
+                                    break
+
+                                # $DATA
+                                if attribute_type_id == 0x80 :
+                                    non_resident_flag = mft_entry[attribute_offset+0x08:attribute_offset+0x08+1]
+
+                                    # Resident - $Bitmap Data : Offset and Size
+                                    if non_resident_flag == 0 :
+                                        print("[ DEBUG ] $Bitmap : Resident")
+
+                                        bitmap_data_offset = int.from_bytes(mft_entry[attribute_offset+0x14:attribute_offset+0x14+2], byteorder='little')
+                                        bitmap_data_size = int.from_bytes(mft_entry[attribute_offset+0x10:attribute_offset+0x10+4], byteorder='little')
+
+                                        bitmap_data = mft_entry[bitmap_data_offset:bitmap_data_offset+bitmap_data_size]
+                                    
+                                    # Non-Resident - $Bitmap Data : Offset and Size
+                                    else :
+                                        print("[ DEBUG ] $Bitmap : Non-Resident")
+
+                                        start_vcn_of_run_list = int.from_bytes(mft_entry[attribute_offset+0x10:attribute_offset+0x10+8], byteorder='little')
+                                        end_vcn_of_run_list = int.from_bytes(mft_entry[attribute_offset+0x18:attribute_offset+0x18+8], byteorder='little')
+                                        offset_of_run_list = int.from_bytes(mft_entry[attribute_offset+0x20:attribute_offset+0x20+2], byteorder='little')
+                                        bitmap_data_size = int.from_bytes(mft_entry[attribute_offset+0x30:attribute_offset+0x30+8], byteorder='little')
+
+                                        run_list = self.get_run_list(mft_entry, attribute_offset, offset_of_run_list)
+                                        
+
+
+                                        bitmap_data = self.get_run_list_data(f, run_list, start_vcn_of_run_list, end_vcn_of_run_list, bitmap_data_size)
+
+                                    self.get_deleted_file_list(f, bitmap_data)
+
+                                attribute_offset += length_of_attribute
+                            
+                            # After End of $Bitmap
+                            attribute_offset = save_attribute_offset
+                            mft_entry = save_mft_entry
+
+                    # MFT Entry - Attribute Header - Non-Resident => [ To - Do ]
                     else :
                         # print("[ DEBUG ] Non-Resident")
 
                         file_name = ""
 
-                    if is_deleted_file == True :
-                        self.file_list.append((file_name, "Deleted"))
-                        self.deleted_file_list.append(file_name)
-                    else :
-                        self.file_list.append((file_name, "Active"))
+                    self.file_list.append(file_name)
 
                 attribute_offset += length_of_attribute
         
-        file_name_only = [file[0] for file in self.file_list]
-        deleted_file_name_only = [file for file in self.deleted_file_list]
-
         print("\n# Partition : NTFS - File List")
-        print(f"{file_name_only}")
+        print(f"{self.file_list}")
         print(f">>>> Total Number of Files : {len(self.file_list)}")
 
         print("\n# Partition : NTFS - Deleted File List")
-        print(f"{deleted_file_name_only}")
+        print(f"{self.deleted_file_list}")
         print(f">>>> Total Number of Files : {len(self.deleted_file_list)}")
 
     """
@@ -471,7 +588,7 @@ class NTFSParse :
 if __name__ == "__main__" :
     # How to Use
     if len(sys.argv) != 2 :
-        print("How to Use : python GPT_NTFS_Parse.py < ( GPT )NTFS File Path >")
+        print("How to Use : python GPT_NTFS_Parse.py < ( GPT ) NTFS File Path >")
         sys.exit(1)
     
     ntfs_file = sys.argv[1]
