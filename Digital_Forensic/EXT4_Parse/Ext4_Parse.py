@@ -19,16 +19,18 @@ class Ext4Parse :
         self.free_block = 0
         self.inode_size = 0
         self.block_size = 0
-        self.inodes_per_group = 0
-        self.blocks_per_group = 0
+        self.inode_per_group = 0
+        self.block_per_group = 0
         self.journal_inode = 0
         self.super_block_check_sum = 0
 
         # Super Block ( + )
         self.total_group = 0
+        self.inode_table_size_per_group = 0
 
         # Block Group Descriptors
         self.block_group_descriptors = []
+        self.delete_inode_direct_blocks = []
     
     """
     """
@@ -43,6 +45,20 @@ class Ext4Parse :
         true_check_sum_crc32 = zlib.crc32(data)
 
         return true_check_sum_crc32
+    
+    """
+    """
+    def get_file_data(self, f, offset) :
+        f.seek(offset)
+
+        file_data = f.read(self.block_size)
+
+        return file_data
+    
+    """
+    """
+    def get_file_data_carve(self, f) :
+        print()
 
     """
     EXT4 - Super Block
@@ -168,10 +184,10 @@ class Ext4Parse :
                 self.free_block = field_data
                 continue
             if field_name == "s_inodes_per_group" :
-                self.inodes_per_group = field_data
+                self.inode_per_group = field_data
                 continue
             if field_name == "s_blocks_per_group" :
-                self.blocks_per_group = field_data
+                self.block_per_group = field_data
                 continue
             if field_name == "s_inode_size" :
                 self.inode_size = field_data
@@ -195,7 +211,10 @@ class Ext4Parse :
             sys.exit(1)
         """
         
-        self.total_group = math.ceil(self.total_block / self.blocks_per_group)
+        self.total_group = math.ceil(self.total_block / self.block_per_group)
+        self.inode_table_size_per_group = math.ceil(self.inode_size * self.inode_per_group / self.block_size)
+
+        print()
 
         print(f"[ + ] Total Inode : {self.total_inode}")
         print(f"[ + ] Total Block : {self.total_block}")
@@ -203,12 +222,13 @@ class Ext4Parse :
         print(f"[ + ] Free Block : {self.free_block}")
         print(f"[ + ] Inode Size : {self.inode_size}")
         print(f"[ + ] Block Size : {self.block_size}")
-        print(f"[ + ] Inodes per Group : {self.inodes_per_group}")
-        print(f"[ + ] Blocks per Group : {self.blocks_per_group}")
+        print(f"[ + ] Inodes per Group : {self.inode_per_group}")
+        print(f"[ + ] Blocks per Group : {self.block_per_group}")
         print(f"[ + ] Journal Inode : {self.journal_inode}")
         print(f"[ + ] Check Sum : {self.super_block_check_sum}")
 
         print(f"[ + ] Total Group : {self.total_group}")
+        print(f"[ + ] Inode Table Size Per Group : {self.inode_table_size_per_group}")
 
         print("\n========================================")
     
@@ -354,6 +374,183 @@ class Ext4Parse :
             self.block_group_descriptors.append(block_group_descriptor)
         
         print("\n========================================")
+    
+    """
+    EXT4 - Block Groups
+    """
+    def get_block_groups(self, f) :
+        print("\n@3 EXT4 - Block Groups")
+
+        block_group_descriptor = []
+
+        for list in self.block_group_descriptors :
+            block_group_descriptor = list
+
+            # print(block_group_descriptor)
+    
+    """
+    """
+
+    """
+    EXT4 - Delete Inode - File Data
+    """
+    def get_delete_inode_file_data(self, f):
+        print("\n@? EXT4 - Delete Inode - File Data")
+
+        print("\n========================================")
+
+        inode_index = 0
+        file_data_list = []
+
+        for delete_inode in self.delete_inode_direct_blocks :
+            
+            for item in delete_inode :
+                if 'i_index' in item :
+                    inode_index = int(item['i_index'])
+                if 'db_data' in item :
+                    direct_block_data = int(item['db_data'])
+                    file_data = self.get_file_data(f, direct_block_data)
+
+                    # print(f"[ DEBUG ] ( Type ) File Data : {type(file_data)}")
+
+                    if file_data == '' :
+                        file_data_list.append(file_data)
+
+            print(f"\n[ Delete Inode ] Index : {inode_index}")
+            
+            print(delete_inode)
+        
+        # print(file_data_list)
+
+    """
+    EXT4 - Delete Inode
+    """
+    def get_delete_inode(self, f) :
+        print("\n@? EXT4 - Delete Inode")
+
+        print("\n========================================")
+
+        delete_inode = []
+
+        inode_format = [
+            (0x0, "H", "i_mode"),
+            (0x2, "H", "i_uid"),
+            (0x4, "I", "i_size_lo"),
+            (0x8, "I", "i_atime"),
+            (0xC, "I", "i_ctime"),
+            (0x10, "I", "i_mtime"),
+            (0x14, "I", "i_dtime"),
+            (0x18, "H", "i_gid"),
+            (0x1A, "H", "i_links_count"),
+            (0x1C, "I", "i_blocks_lo"),
+            (0x20, "I", "i_flags"),
+            (0x24, "I", "i_osd1"),
+            (0x28, "60s", "i_block"),
+            (0x64, "I", "i_generation"),
+            (0x68, "I", "i_file_acl_lo"),
+            (0x6C, "I", "i_size_high"),
+            (0x70, "I", "i_obso_faddr"),
+            (0x74, "12s", "i_osd2"),
+            (0x80, "H", "i_extra_isize"),
+            (0x82, "H", "i_checksum_hi"),
+            (0x84, "I", "i_ctime_extra"),
+            (0x88, "I", "i_mtime_extra"),
+            (0x8C, "I", "i_atime_extra"),
+            (0x90, "I", "i_crtime"),
+            (0x94, "I", "i_crtime_extra"),
+            (0x98, "I", "i_version_hi"),
+            (0x9C, "I", "i_projid"),
+        ]
+
+        for list in self.block_group_descriptors :
+            inode_table_index = 0
+            inode_table_offset = 0
+
+            for item in list :
+                if 'bg_index' in item :
+                    inode_table_index = int(item['bg_index'])
+                if 'bg_inode_table' in item :
+                    bg_inode_bitmap_data = int(item['bg_inode_table'])
+                    inode_table_offset = bg_inode_bitmap_data * self.block_size
+
+            # print(f"[ DEBUG ] Inode Table Offset : {inode_table_offset}")
+
+            print(f"\n[ Inode Table ] Index : {inode_table_index} / Offset ( Hex ) : {self.print_hex(inode_table_offset)}")
+
+            f.seek(inode_table_offset)
+
+            for index in range(self.inode_per_group) :
+                inode_data = f.read(self.inode_size)
+
+                inode = []
+
+                inode.append({"i_index" : f"{index}"})
+
+                for field_offset, field_format, field_name in inode_format :
+                    field_size = struct.calcsize(field_format)
+                    field_data = struct.unpack_from(field_format, inode_data, field_offset)[0]
+
+                    if field_name == "i_dtime" :
+                        inode.append({field_name : field_data})
+                        continue
+                    if field_name == "i_block" :
+                        inode.append({field_name : field_data})
+                        continue
+                            
+                for item in inode :
+                    if 'i_dtime' in item :
+                        i_dtime_data = int(item['i_dtime'])
+
+                        if i_dtime_data != 0 :
+                            print(inode)
+
+                            delete_inode.append(inode)
+
+        print("\n========================================")
+
+        delete_inode_direct_blocks = []
+
+        for inode in delete_inode :
+            # print("Delete Inode - \"i_block\"")
+
+            delete_inode_direct_block_entry = []
+
+            for item in inode :
+                if 'i_index' in item :
+                    delete_inode_index = int(item['i_index'])
+                    delete_inode_direct_block_entry.append({"i_index" : f"{delete_inode_index}"})
+
+            i_block_data = 0
+            direct_block_data = 0
+
+            for item in inode :
+                if 'i_block' in item :
+                    i_block_data = item['i_block']
+            
+            # print(f"[ DEBUG ] i_block : {i_block_data}")
+            # print(f"[ DEBUG ] i_block ( Type ) : {type(i_block_data)}")
+
+            for index in range(15) :
+                direct_block_data_before = i_block_data[index * 4 : (index+1) * 4]
+                direct_block_data = int.from_bytes(direct_block_data_before, byteorder='little')
+                
+                # print(f"[ DEBUG ] Direct Block Data ( Before ) : {direct_block_data_before}")
+
+                if direct_block_data != 0 :
+                    delete_inode_direct_block_entry.append({"db_index" : f"{index}"})
+                    delete_inode_direct_block_entry.append({"db_data" : f"{direct_block_data}"})
+            
+            delete_inode_direct_blocks.append(delete_inode_direct_block_entry)
+
+        # print(delete_inode_direct_blocks)
+
+        self.delete_inode_direct_blocks = delete_inode_direct_blocks
+
+        # [ ?? ] Delete Inode - File Data
+        self.get_delete_inode_file_data(f)
+                            
+    """
+    """
 
     """
     EXT4
@@ -366,6 +563,16 @@ class Ext4Parse :
             self.get_super_block(f)
             # [ 2 ] Block Group Descriptors
             self.get_block_group_descriptors(f)
+            # [ 3 ] Block Group
+            self.get_block_groups(f)
+
+            # ( ... )
+
+            # [ ? ] Delete Inode
+            # [ ?? ] Delete Inode - File Data
+            self.get_delete_inode(f)
+
+            # ( ... )
 
         print("\nProgram End.")
 
