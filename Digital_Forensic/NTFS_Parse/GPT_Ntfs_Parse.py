@@ -30,6 +30,8 @@ class NTFSParse :
         self.partition_list = []
         self.file_list = []
         self.deleted_file_list = []
+        self.file_data_list = []
+        self.deleted_file_data_list = []
     
     """
     """
@@ -333,8 +335,13 @@ class NTFSParse :
 
         print(f">>>> Total Number of MFT Entries : {mft_entries_count}")
 
+        deleted_file_index = 0
+        deleted_file_directory = os.getcwd()
+
         # MFT Entry
         for index in range(mft_entries_count) :
+            deleted_file_flag = False
+
             f.seek(self.mft_start_offset + (mft_entry_size * index))
 
             mft_entry = f.read(mft_entry_size)
@@ -361,6 +368,10 @@ class NTFSParse :
 
             if mft_entry_header_signature != MFT_ENTRY_HEADER_SIGNATURE :
                 continue
+
+            # Deleted File #0 - Flag
+            mft_entry_flag = int.from_bytes(mft_entry_flags, byteorder='little')
+            deleted_file_flag = (mft_entry_flag == 0x0000)
 
             # MFT Entry - Attribute Header
             attribute_offset = int.from_bytes(offset_of_file_attribute, byteorder='little')
@@ -389,7 +400,7 @@ class NTFSParse :
                     if non_resident_flag == 0 :
                         # print("[ DEBUG ] Resident")
 
-                        resident_attribute_header_data = mft_entry[attribute_offset+16:attribute_offset+32]
+                        resident_attribute_header_data = mft_entry[attribute_offset+16:attribute_offset+32] # ( Resident ) Attribute Header : 32 Bytes
 
                         length_of_attribute_content = resident_attribute_header_data[0:4]
                         offset_to_attribute_data = int.from_bytes(resident_attribute_header_data[4:6], byteorder='little')
@@ -397,6 +408,7 @@ class NTFSParse :
                         reserved = resident_attribute_header_data[7:8]
                         attribute_name = resident_attribute_header_data[8:16]
 
+                        # $FILE_NAME - Attribute Content
                         file_name_length_offset = attribute_offset + offset_to_attribute_data + 0x40
                         file_name_length = int.from_bytes(mft_entry[file_name_length_offset:file_name_length_offset+1], byteorder='little')
 
@@ -409,19 +421,125 @@ class NTFSParse :
                         file_name_bytes = mft_entry[file_name_offset : file_name_offset + (file_name_length * 2)]
                         file_name = file_name_bytes.decode('utf-16-le', errors='ignore').strip("\x00")
 
-                    # MFT Entry - Attribute Header - Non-Resident => [ To - Do ]
+                    # MFT Entry - Attribute Header - Non-Resident
                     else :
                         # print("[ DEBUG ] Non-Resident")
 
+                        non_resident_attribute_header_data = mft_entry[attribute_offset+16:attribute_offset+72] # ( Non-Resident ) Attribute Header : 72 Bytes
+
+                        start_vcn_of_run_list = attribute_header_data[0:8]
+                        end_vcn_of_run_list = attribute_header_data[8:16]
+                        offset_to_run_list = attribute_header_data[16:18]
+                        compress_unit_size = attribute_header_data[18:20]
+                        reserved = attribute_header_data[20:24]
+                        allocated_size_of_attribute_content = attribute_header_data[24:32]
+                        real_size_of_attribute_content = attribute_header_data[32:40]
+                        initial_size_of_attribute_content = attribute_header_data[40:48]
+                        attribute_name = attribute_header_data[48:56]
+
+                        # $FILE_NAME - Attribute Content => [ To - Do ]
+                        file_name_length_offset = 0
+                        file_name_length = 0
+
+                        if file_name_length == 0:
+                            attribute_offset += length_of_attribute
+
+                            continue  
+
+                        file_name_offset = 0
+                        file_name_bytes = 0
                         file_name = ""
 
                     self.file_list.append(file_name)
+
+                    # Deleted File #1 - File Name
+                    if deleted_file_flag == True :
+                        self.deleted_file_list.append(file_name)
+
+                    attribute_offset += length_of_attribute
+
+                    continue
+
+                # $DATA
+                if attribute_type_id == 0x80 :
+
+                    # MFT Entry - Attribute Header - Resident
+                    if non_resident_flag == 0 :
+                        # print("[ DEBUG ] $DATA : Resident")
+
+                        resident_attribute_header_data = mft_entry[attribute_offset+16:attribute_offset+32] # ( Resident ) Attribute Header : 32 Bytes
+
+                        length_of_attribute_content = resident_attribute_header_data[0:4]
+                        offset_to_attribute_data = int.from_bytes(resident_attribute_header_data[4:6], byteorder='little')
+                        indexed_flag = resident_attribute_header_data[6:7]
+                        reserved = resident_attribute_header_data[7:8]
+                        attribute_name = resident_attribute_header_data[8:16]
+
+                        # $DATA - Attribute Content
+                        file_data_length = int.from_bytes(length_of_attribute_content, byteorder='little')
+                        file_data_offset = attribute_offset + offset_to_attribute_data
+
+                        if file_data_length == 0:
+                            attribute_offset += length_of_attribute
+
+                            continue  
+
+                        file_data = mft_entry[file_data_offset:file_data_offset+file_data_length]
+
+                    # MFT Entry - Attribute Header - Non-Resident
+                    else :
+                        # print("[ DEBUG ] $DATA : Non-Resident")
+
+                        non_resident_attribute_header_data = mft_entry[attribute_offset+16:attribute_offset+72] # ( Non-Resident ) Attribute Header : 72 Bytes
+
+                        start_vcn_of_run_list = attribute_header_data[0:8]
+                        end_vcn_of_run_list = attribute_header_data[8:16]
+                        offset_to_run_list = attribute_header_data[16:18]
+                        compress_unit_size = attribute_header_data[18:20]
+                        reserved = attribute_header_data[20:24]
+                        allocated_size_of_attribute_content = attribute_header_data[24:32]
+                        real_size_of_attribute_content = attribute_header_data[32:40]
+                        initial_size_of_attribute_content = attribute_header_data[40:48]
+                        attribute_name = attribute_header_data[48:56]
+
+                        # $DATA - Attribute Content => [ To - Do ]
+                        file_data_length = 0
+                        file_data_offset = 0
+
+                        if file_data_length == 0:
+                            attribute_offset += length_of_attribute
+
+                            continue  
+
+                        file_data = 0
+
+                    self.file_data_list.append({file_data})
+
+                    # Deleted File #2 - File Data
+                    if deleted_file_flag == True :
+                        self.deleted_file_data_list.append(file_data)
+
+                        deleted_file_name = f"deleted_file_{deleted_file_index}"
+                        deleted_file_path = os.path.join(deleted_file_directory, deleted_file_name)
+                        
+                        with open(deleted_file_path, 'wb') as deleted_file :
+                            deleted_file.write(file_data)
+                        
+                        deleted_file_index += 1
+
+                    attribute_offset += length_of_attribute
+
+                    continue
 
                 attribute_offset += length_of_attribute
         
         print("\n# Partition : NTFS - File List")
         print(f"{self.file_list}")
         print(f">>>> Total Number of Files : {len(self.file_list)}")
+
+        print("\n# Partition : NTFS - Deleted File List")
+        print(f"{self.deleted_file_list}")
+        print(f">>>> Total Number of Deleted Files : {len(self.deleted_file_list)}")
     
     """
     NTFS
