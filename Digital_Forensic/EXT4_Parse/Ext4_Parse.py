@@ -6,6 +6,8 @@ import struct
 import zlib
 import math
 
+JOURNAL_SIGNATURE = b"\xC0\x3B\x39\x98"
+
 class Ext4Parse :
     """
     """
@@ -31,7 +33,21 @@ class Ext4Parse :
         # Block Group Descriptors
         self.block_group_descriptors = []
         self.delete_inode_direct_blocks = []
-    
+
+        # Journal
+        self.journal_offset = 0
+
+        # Journal - Super Block
+        self.journal_block_size = 0
+        self.journal_total_block = 0
+        self.journal_first_transaction_block = 0
+        self.journal_new_first_transaction_block = 0
+
+        # Journal - Super Block ( + )
+        self.journal_total_transaction_block = 0
+        self.journal_first_transaction_block_offset = 0
+        self.journal_new_first_transaction_block_offset = 0
+
     """
     """
     def print_hex(self, int) :
@@ -381,6 +397,8 @@ class Ext4Parse :
     def get_block_groups(self, f) :
         print("\n@3 EXT4 - Block Groups")
 
+        print("\n========================================")
+
         block_group_descriptor = []
 
         for list in self.block_group_descriptors :
@@ -388,6 +406,205 @@ class Ext4Parse :
 
             # print(block_group_descriptor)
     
+        print("\n========================================")
+
+    """
+    """
+
+    """
+    EXT4 - Journal ( JBD2 ) - Super Block
+    """
+    def get_journal_super_block(self, f) :
+        print("\n@( N + @ ) EXT4 - Journal - Super Block")
+
+        print("\n========================================")
+    
+        f.seek(self.journal_offset)
+        journal_super_block_data = f.read(1024)
+
+        journal_super_block_format = [
+            (0x0, "I", "h_magic"),
+            (0x4, "I", "h_blocktype"),
+            (0x8, "I", "h_sequence"),
+            (0xC, "I", "s_blocksize"),
+            (0x10, "I", "s_maxlen"),
+            (0x14, "I", "s_first"),
+            (0x18, "I", "s_sequence"),
+            (0x1C, "I", "s_start"),
+            (0x20, "I", "s_errno"),
+            (0x24, "I", "s_feature_compat"),
+            (0x28, "I", "s_feature_incompat"),
+            (0x2C, "I", "s_feature_ro_compat"),
+            (0x30, "16s", "s_uuid"),
+            (0x40, "I", "s_nr_users"),
+            (0x44, "I", "s_dynsuper"),
+            (0x48, "I", "s_max_transaction"),
+            (0x4C, "I", "s_max_trans_data"),
+            (0x50, "B", "s_checksum_type"),
+            (0x51, "3s", "s_padding2"),
+            (0x54, "168s", "s_padding"),
+            (0xFC, "I", "s_checksum"),
+            (0x100, "768s", "s_users"),
+        ]
+
+        for field_offset, field_format, field_name in journal_super_block_format :
+            field_size = struct.calcsize(field_format)
+            field_data = struct.unpack_from(">" + field_format, journal_super_block_data, field_offset)[0] # Journal - JBD2 : Big Endian
+
+            # print(f"[ + ] {field_name} : {field_data}")
+
+            if field_name == "s_blocksize" :
+                self.journal_block_size = field_data
+                continue
+            if field_name == "s_maxlen" :
+                self.journal_total_block = field_data
+                continue
+            if field_name == "s_first" :
+                self.journal_first_transaction_block = field_data
+                continue
+            if field_name == "s_start" :
+                self.journal_new_first_transaction_block = field_data
+                continue
+        
+        print("\n========================================")
+    
+    """
+    EXT4 - Journal ( JBD2 ) - Transaction
+    """
+    def get_journal_transaction(self, f) :
+        transaction_offset = self.journal_first_transaction_block_offset
+
+        f.seek(transaction_offset)
+
+        # ( 1 ) Transaction - Descriptor Block
+        journal_descriptor_block_data = f.read(self.journal_block_size) # 1 Block
+
+        block_tag_array_size = self.journal_block_size - (12 + 4)
+
+        block_tag_size = 8 # [ To Do ]
+
+        block_tag_max_count = block_tag_array_size // block_tag_size
+        block_tag_count = 0
+
+        block_tag_list = []
+
+        journal_descriptor_block_format = [
+            (0x0, "I", "h_magic"),
+            (0x4, "I", "h_blocktype"),
+            (0x8, "I", "h_sequence"),
+            (0xC, f"{block_tag_array_size}s", "block_tag_array"),
+            (0xFFC, "I", "t_checksum"),
+        ]
+
+        for field_offset, field_format, field_name in journal_descriptor_block_format :
+            field_size = struct.calcsize(field_format)
+            field_data = struct.unpack_from(">" + field_format, journal_descriptor_block_data, field_offset)[0] # Journal - JBD2 : Big Endian
+
+            # print(f"[ + ] {field_name} : {field_data}")
+
+            if field_name == "block_tag_array" :
+                for index in range(block_tag_max_count) :
+                    block_tag = field_data[index * block_tag_size : (index + 1) * block_tag_size]
+                    block_tag_int = int.from_bytes(block_tag, byteorder='big') # Journal - JBD2 : Big Endian
+
+                    if block_tag_int != 0 :
+                        block_tag_list.append({index : block_tag})
+
+                        block_tag_count += 1
+                    
+                    continue
+            
+        print(f"[ DEBUG ] Block Tag List : {block_tag_list}")
+        print(f"[ DEBUG ] Block Tag Count : {block_tag_count}")
+
+        # ( 2 ) Transaction - Data Block
+        # [ To Do ]
+
+        # ( 3 ) Transaction - Commit Block
+        # [ To Do ]
+    
+    """
+    EXT4 - Journal ( JBD2 ) - Transactions
+    """
+    def get_journal_transactions(self, f) :
+        print("\n@( N + @ ) EXT4 - Journal - Transactions")
+
+        print("\n========================================")
+        
+        self.get_journal_transaction(f)
+
+        print("\n========================================")
+
+    """
+    EXT4 - Journal ( JBD2 )
+    """
+    def get_journal(self, f) :
+        # ( ... )
+
+        inode_table_offset = 0x8e000 # [ To Do ]
+
+        journal_inode_table_offset = inode_table_offset + (self.journal_inode - 1) * self.inode_size
+
+        f.seek(journal_inode_table_offset)
+        journal_inode = f.read(self.inode_size)
+
+        journal_inode_i_block = journal_inode[40:100]
+
+        journal_inode_direct_blocks = []
+
+        for index in range(15) :
+            direct_block_data_before = journal_inode_i_block[index * 4 : (index+1) * 4]
+            direct_block_data = int.from_bytes(direct_block_data_before, byteorder='little')
+            
+            # print(f"[ DEBUG ] Direct Block Data ( Before ) : {direct_block_data_before}")
+
+            if direct_block_data != 0 :
+                journal_inode_direct_blocks.append({"db_index" : index})
+                journal_inode_direct_blocks.append({"db_data" : direct_block_data})
+        
+        # print(f"[ DEBUG ] Journal Inode - Direct Blocks : {journal_inode_direct_blocks}")
+
+        for journal_inode_direct_block in journal_inode_direct_blocks :
+            if 'db_data' in journal_inode_direct_block :
+                direct_block_offset = journal_inode_direct_block['db_data'] * self.block_size
+            
+                f.seek(direct_block_offset)
+                journal_signature = f.read(4)
+
+                if journal_signature == JOURNAL_SIGNATURE :
+                    self.journal_offset = direct_block_offset
+
+                    break
+        
+        # Journal - Super Block
+        self.get_journal_super_block(f)
+
+        # print(f"[ DEBUG ] Journal - Block Size : {self.print_hex(self.journal_block_size)}")
+        # print(f"[ DEBUG ] Journal - Total Block : {self.print_hex(self.journal_total_block)}")
+        # print(f"[ DEBUG ] Journal - Start Transaction Block : {self.print_hex(self.journal_first_transaction_block)}")
+        # print(f"[ DEBUG ] Journal - End Transaction Block : {self.journal_new_first_transaction_block}")
+
+        journal_transaction_first = self.journal_first_transaction_block
+        journal_transaction_new_first = self.journal_new_first_transaction_block
+
+        if journal_transaction_first == journal_transaction_new_first :
+            self.journal_total_transaction_block = 0
+        elif journal_transaction_first < journal_transaction_new_first :
+            self.journal_total_transaction_block = journal_transaction_new_first - journal_transaction_first
+        elif journal_transaction_first > journal_transaction_new_first :
+            self.journal_total_transaction_block = (self.journal_total_block - self.journal_first_transaction_block) + (self.journal_new_first_transaction_block)
+
+        # print(f"[ DEBUG ] Journal Total Transaction Block : {self.journal_total_transaction_block}")
+
+        journal_first_transaction_block_offset = (self.journal_offset) + self.journal_block_size * self.journal_first_transaction_block
+        journal_new_first_transaction_block_offset = (self.journal_offset) + self.journal_block_size * self.journal_new_first_transaction_block
+
+        self.journal_first_transaction_block_offset = journal_first_transaction_block_offset
+        self.journal_new_first_transaction_block_offset = journal_new_first_transaction_block_offset
+
+        # Journal - Transactions
+        self.get_journal_transactions(f)
+        
     """
     """
 
@@ -395,7 +612,7 @@ class Ext4Parse :
     EXT4 - Delete Inode - File Data
     """
     def get_delete_inode_file_data(self, f):
-        print("\n@? EXT4 - Delete Inode - File Data")
+        print("\n@( N + 1 ) EXT4 - Delete Inode - File Data")
 
         print("\n========================================")
 
@@ -422,11 +639,13 @@ class Ext4Parse :
         
         # print(file_data_list)
 
+        print("\n========================================")
+
     """
     EXT4 - Delete Inode
     """
     def get_delete_inode(self, f) :
-        print("\n@? EXT4 - Delete Inode")
+        print("\n@( N ) EXT4 - Delete Inode")
 
         print("\n========================================")
 
@@ -546,7 +765,7 @@ class Ext4Parse :
 
         self.delete_inode_direct_blocks = delete_inode_direct_blocks
 
-        # [ ?? ] Delete Inode - File Data
+        # [ N + 1 ] Delete Inode - File Data
         self.get_delete_inode_file_data(f)
                             
     """
@@ -568,9 +787,14 @@ class Ext4Parse :
 
             # ( ... )
 
-            # [ ? ] Delete Inode
-            # [ ?? ] Delete Inode - File Data
+            # [ N ] Delete Inode
+            # [ N + 1 ] Delete Inode - File Data
             self.get_delete_inode(f)
+
+            # ( ... )
+
+            # [ N + @ ] Journal
+            self.get_journal(f)
 
             # ( ... )
 
