@@ -48,6 +48,17 @@ class Ext4Parse :
         self.journal_first_transaction_block_offset = 0
         self.journal_new_first_transaction_block_offset = 0
 
+        # Journal - Super Block ( + ) ( + )
+        self.JBD2_FEATURE_INCOMPAT_CSUM_V2 = False
+        self.JBD2_FEATURE_INCOMPAT_CSUM_V3 = False
+
+        # Journal - Transactions
+        self.journal_transaction_offset_list = []
+        self.journal_transaction_list = []
+
+        # Journal - Transactions ( + )
+        self.journal_transaction_data_block_list = []
+
     """
     """
     def print_hex(self, int) :
@@ -447,11 +458,13 @@ class Ext4Parse :
             (0x100, "768s", "s_users"),
         ]
 
+        print()
+
         for field_offset, field_format, field_name in journal_super_block_format :
             field_size = struct.calcsize(field_format)
             field_data = struct.unpack_from(">" + field_format, journal_super_block_data, field_offset)[0] # Journal - JBD2 : Big Endian
 
-            # print(f"[ + ] {field_name} : {field_data}")
+            print(f"[ + ] {field_name} : {field_data}")
 
             if field_name == "s_blocksize" :
                 self.journal_block_size = field_data
@@ -465,23 +478,63 @@ class Ext4Parse :
             if field_name == "s_start" :
                 self.journal_new_first_transaction_block = field_data
                 continue
+
+            if field_name == "s_feature_incompat" :
+                self.JBD2_FEATURE_INCOMPAT_CSUM_V2 = (field_data & 0x08) != 0
+                self.JBD2_FEATURE_INCOMPAT_CSUM_V3 = (field_data & 0x10) != 0
         
         print("\n========================================")
     
     """
-    EXT4 - Journal ( JBD2 ) - Transaction
+    EXT4 - Journal ( JBD2 ) - Transactions - Count
     """
-    def get_journal_transaction(self, f) :
-        transaction_offset = self.journal_first_transaction_block_offset
+    def get_journal_transaction_count(self, f) :
+        block_offset_list = []
+        transaction_offset_list = []
 
-        f.seek(transaction_offset)
+        # transaction_descriptor_block_offset = 0
+        # transaction_commit_block_offset = 0
+
+        block_offset = self.journal_offset + self.journal_block_size
+
+        for index in range(self.journal_total_block) :
+            f.seek(block_offset)
+            block_data = f.read(self.journal_block_size)
+
+            if block_data[0:4] == JOURNAL_SIGNATURE :
+                block_offset_list.append(block_offset)
+
+            block_offset += self.journal_block_size
+
+        # print(f"[ DEBUG ] Block Offset List : {block_offset_list}")
+
+        transaction_offset_list = [block_offset_list[index:index+2] for index in range(0, len(block_offset_list), 2)]
+
+        # print(f"[ DEBUG ] Transaction Offset List : {transaction_offset_list}")
+        
+        self.journal_transaction_offset_list = transaction_offset_list
+    
+    """
+    EXT4 - Journal ( JBD2 ) - Transactions - Transaction
+    """
+    def get_journal_transaction(self, f, index, descriptor_block_offset, commit_block_offset) :
+        print(f"\n[ Journal Transaction #{index} ]")
 
         # ( 1 ) Transaction - Descriptor Block
+        print("( 1 ) Descriptor Block")
+
+        f.seek(descriptor_block_offset)
         journal_descriptor_block_data = f.read(self.journal_block_size) # 1 Block
 
         block_tag_array_size = self.journal_block_size - (12 + 4)
 
-        block_tag_size = 8 # [ To Do ]
+        # JBD2_FEATURE_INCOMPAT_CSUM_V3 - Set : journal_block_tag3_s ( 16 Bytes )
+        if self.JBD2_FEATURE_INCOMPAT_CSUM_V3 :
+            block_tag_size = 16
+        
+        # JBD2_FEATURE_INCOMPAT_CSUM_V3 - Not Set : journal_block_tag_s ( 8 Bytes )
+        else :
+            block_tag_size = 8
 
         block_tag_max_count = block_tag_array_size // block_tag_size
         block_tag_count = 0
@@ -500,7 +553,7 @@ class Ext4Parse :
             field_size = struct.calcsize(field_format)
             field_data = struct.unpack_from(">" + field_format, journal_descriptor_block_data, field_offset)[0] # Journal - JBD2 : Big Endian
 
-            # print(f"[ + ] {field_name} : {field_data}")
+            # print(f"    [ + ] {field_name} : {field_data}")
 
             if field_name == "block_tag_array" :
                 for index in range(block_tag_max_count) :
@@ -513,15 +566,124 @@ class Ext4Parse :
                         block_tag_count += 1
                     
                     continue
-            
-        print(f"[ DEBUG ] Block Tag List : {block_tag_list}")
-        print(f"[ DEBUG ] Block Tag Count : {block_tag_count}")
+        
+        print(f"Block Tag List : {block_tag_list}")
+        print(f"Block Tag Count : {block_tag_count}")
 
-        # ( 2 ) Transaction - Data Block
-        # [ To Do ]
+        # ( 2 ) Transaction - Data Block => [ To Do ]
+        print("( 2 ) Data Block")
+
+        journal_block_tag_format = []
+        transaction_data_block = 0
+
+        transaction_data_block_list = []
+
+        # JBD2_FEATURE_INCOMPAT_CSUM_V3 - Set : Struct - journal_block_tag3_s ( 16 Bytes )
+        if self.JBD2_FEATURE_INCOMPAT_CSUM_V3 :
+            # print(f"[ DEBUG ] JBD2_FEATURE_INCOMPAT_CSUM_V3 - Set")
+
+            journal_block_tag_format = [
+                (0x0, "I", "t_blocknr"),
+                (0x4, "I", "t_flags"),
+                (0x8, "I", "t_blocknr_high"),
+                (0xC, "I", "t_checksum"),
+            ]
+
+            for block_tag in block_tag_list :
+                block_tag_index = list(block_tag.keys())[0]
+                block_tag_data = list(block_tag.values())[0]
+
+                transaction_data_block_low = 0
+                transaction_data_block_high = 0
+                
+                for field_offset, field_format, field_name in journal_block_tag_format :
+                    field_size = struct.calcsize(field_format)
+                    field_data = struct.unpack_from(">" + field_format, block_tag_data, field_offset)[0] # Journal - JBD2 : Big Endian
+
+                    # Low : Lower 32 Bits
+                    if field_name == "t_blocknr" :
+                        transaction_data_block_low = field_data
+                    # High : Upper 32 Bits
+                    if field_name == "t_blocknr_high" :
+                        transaction_data_block_high = field_data
+
+                transaction_data_block = (transaction_data_block_high << 16) | transaction_data_block_low
+
+                transaction_data_block_list.append({block_tag_index : transaction_data_block})
+
+        # JBD2_FEATURE_INCOMPAT_CSUM_V3 - Not Set : Struct - journal_block_tag_s ( 8 Bytes )
+        else :
+            # print(f"[ DEBUG ] JBD2_FEATURE_INCOMPAT_CSUM_V3 - Not Set")
+            
+            journal_block_tag_format = [
+                (0x0, "I", "t_blocknr"),
+                (0x4, "H", "t_checksum"),
+                (0x6, "H", "t_flags"),
+            ]
+
+            for block_tag in block_tag_list :
+                block_tag_index = list(block_tag.keys())[0]
+                block_tag_data = list(block_tag.values())[0]
+
+                for field_offset, field_format, field_name in journal_block_tag_format :
+                    field_size = struct.calcsize(field_format)
+                    field_data = struct.unpack_from(">" + field_format, block_tag_data, field_offset)[0] # Journal - JBD2 : Big Endian
+
+                    if field_name == "block_tag_array" :
+                        transaction_data_block = field_data
+
+                transaction_data_block_list.append(transaction_data_block)
+
+                transaction_data_block_list.append({block_tag_index : transaction_data_block})
+                        
+        print(f"Transaction Data Block ( In Disk ) : {transaction_data_block_list}")
+
+        self.journal_transaction_data_block_list = transaction_data_block_list
+
+        # ( ... ) => [ To Do ] : ( In ) Data Block
 
         # ( 3 ) Transaction - Commit Block
-        # [ To Do ]
+        print("( 3 ) Commit Block")
+
+        f.seek(commit_block_offset)
+        journal_commit_block_data = f.read(self.journal_block_size)
+
+        commit_sec = 0
+        commit_nsec = 0
+        transaction_commit = False
+
+        journal_commit_block_format = [
+            (0x0, "I", "h_magic"),
+            (0x4, "I", "h_blocktype"),
+            (0x8, "I", "h_sequence"),
+            (0xC, "B", "h_chksum_type"),
+            (0xD, "B", "h_chksum_size"),
+            (0xE, "H", "h_padding"),
+            (0x10, "32s", "h_chksum"),
+            (0x30, "Q", "h_commit_sec"),
+            (0x38, "I", "h_commit_nsec"),
+        ]
+
+        for field_offset, field_format, field_name in journal_commit_block_format :
+            field_size = struct.calcsize(field_format)
+            field_data = struct.unpack_from(">" + field_format, journal_commit_block_data, field_offset)[0] # Journal - JBD2 : Big Endian
+
+            # print(f"    [ + ] {field_name} : {field_data}")
+
+            if field_name == "h_commit_sec" :
+                commit_sec = field_data
+                    
+                continue
+            
+            if field_name == "h_commit_nsec" :
+                commit_nsec = field_data
+                    
+                continue
+        
+        if (commit_sec != 0) or (commit_nsec != 0) :
+            transaction_commit = True
+        
+        print(f"Transaction Commit : {transaction_commit}")
     
     """
     EXT4 - Journal ( JBD2 ) - Transactions
@@ -530,9 +692,21 @@ class Ext4Parse :
         print("\n@( N + @ ) EXT4 - Journal - Transactions")
 
         print("\n========================================")
-        
-        self.get_journal_transaction(f)
 
+        self.get_journal_transaction_count(f)
+
+        transaction_index = 0
+        transaction_descriptor_block_offset = 0
+        transaction_commit_block_offset = 0
+
+        for journal_transaction_offset in self.journal_transaction_offset_list :
+            transaction_descriptor_block_offset = journal_transaction_offset[0]
+            transaction_commit_block_offset = journal_transaction_offset[1]
+
+            self.get_journal_transaction(f, transaction_index, transaction_descriptor_block_offset, transaction_commit_block_offset)
+
+            transaction_index += 1
+            
         print("\n========================================")
 
     """
