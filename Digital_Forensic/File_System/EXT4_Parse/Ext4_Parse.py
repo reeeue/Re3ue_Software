@@ -32,7 +32,8 @@ class Ext4Parse :
 
         # Block Group Descriptors
         self.block_group_descriptors = []
-        self.delete_inode_direct_blocks = []
+
+        # ( ... )
 
         # Journal
         self.journal_offset = 0
@@ -58,6 +59,12 @@ class Ext4Parse :
 
         # Journal - Transactions ( + )
         self.journal_transaction_data_block_list = []
+
+        # ( ... )
+
+        # Delete File
+        self.delete_file_inode_direct_blocks = []
+        self.delete_file_inode_i_generations = []
 
     """
     """
@@ -293,7 +300,7 @@ class Ext4Parse :
             (0x3C, "I", "bg_reserved"),
         ]
 
-        block_group_descriptor.append({"bg_index" : f"{index}"})
+        block_group_descriptor.append({"bg_index" : index})
 
         for field_offset, field_format, field_name in block_group_descriptor_format :
             field_size = struct.calcsize(field_format)
@@ -304,10 +311,10 @@ class Ext4Parse :
             # print(f"[ + ] {field_name} : {field_data}")
 
             if field_name == "bg_flags" :
-                block_group_descriptor.append({f"{field_name}" : f"{field_data}"})
+                block_group_descriptor.append({field_name : field_data})
                 continue
             if field_name == "bg_checksum" :
-                block_group_descriptor.append({f"{field_name}" : f"{field_data}"})
+                block_group_descriptor.append({field_name : field_data})
                 continue
 
             # Low : Lower 16 Bits
@@ -355,22 +362,22 @@ class Ext4Parse :
             full_value = (temp[temp_index + (len(temp) // 2)] << 16) | temp[temp_index]
 
             if temp_index == 0 :
-                block_group_descriptor.append({"bg_block_bitmap" : f"{full_value}"})
+                block_group_descriptor.append({"bg_block_bitmap" : full_value})
                 continue
             if temp_index == 1 :
-                block_group_descriptor.append({"bg_inode_bitmap" : f"{full_value}"})
+                block_group_descriptor.append({"bg_inode_bitmap" : full_value})
                 continue
             if temp_index == 2 :
-                block_group_descriptor.append({"bg_inode_table" : f"{full_value}"})
+                block_group_descriptor.append({"bg_inode_table" : full_value})
                 continue
             if temp_index == 3 :
-                block_group_descriptor.append({"bg_free_blocks_count" : f"{full_value}"})
+                block_group_descriptor.append({"bg_free_blocks_count" : full_value})
                 continue
             if temp_index == 4 :
-                block_group_descriptor.append({"bg_free_inodes_count" : f"{full_value}"})
+                block_group_descriptor.append({"bg_free_inodes_count" : full_value})
                 continue
             if temp_index == 5 :
-                block_group_descriptor.append({"bg_used_dirs_count" : f"{full_value}"})
+                block_group_descriptor.append({"bg_used_dirs_count" : full_value})
                 continue
 
         return block_group_descriptor
@@ -426,7 +433,7 @@ class Ext4Parse :
     EXT4 - Journal ( JBD2 ) - Super Block
     """
     def get_journal_super_block(self, f) :
-        print("\n@( N + @ ) EXT4 - Journal - Super Block")
+        print("\n@( N ) EXT4 - Journal - Super Block")
 
         print("\n========================================")
     
@@ -689,7 +696,7 @@ class Ext4Parse :
     EXT4 - Journal ( JBD2 ) - Transactions
     """
     def get_journal_transactions(self, f) :
-        print("\n@( N + @ ) EXT4 - Journal - Transactions")
+        print("\n@( N ) EXT4 - Journal - Transactions")
 
         print("\n========================================")
 
@@ -783,47 +790,76 @@ class Ext4Parse :
     """
 
     """
-    EXT4 - Delete Inode - File Data
+    EXT4 - Delete File - ( File ) Data : #1 Direct Block
     """
-    def get_delete_inode_file_data(self, f):
-        print("\n@( N + 1 ) EXT4 - Delete Inode - File Data")
+    def get_delete_file_data_direct_block(self, f):
+        print("\n@( N + @ ) EXT4 - Delete File - ( File ) Data : #1 Direct Block")
 
         print("\n========================================")
 
         inode_index = 0
-        file_data_list = []
+        delete_file_data_list = []
 
-        for delete_inode in self.delete_inode_direct_blocks :
+        for delete_file_inode in self.delete_file_inode_direct_blocks :
             
-            for item in delete_inode :
+            for item in delete_file_inode :
                 if 'i_index' in item :
-                    inode_index = int(item['i_index'])
+                    inode_index = item['i_index']
                 if 'db_data' in item :
-                    direct_block_data = int(item['db_data'])
+                    direct_block_data = item['db_data']
                     file_data = self.get_file_data(f, direct_block_data)
 
                     # print(f"[ DEBUG ] ( Type ) File Data : {type(file_data)}")
 
-                    if file_data == '' :
-                        file_data_list.append(file_data)
+                    # [ To Do ]
 
-            print(f"\n[ Delete Inode ] Index : {inode_index}")
+            print(f"\n[ Delete File - Inode ] Index : {inode_index}")
             
-            print(delete_inode)
+            print(delete_file_inode)
         
-        # print(file_data_list)
+        # print(delete_file_data_list)
+
+        print("\n========================================")
+    
+    """
+    EXT4 - Delete File - ( File ) Data : #2 "i_generation" ( File Version )
+    """
+    def get_delete_file_data_i_generation(self, f):
+        print("\n@( N + @ ) EXT4 - Delete File - ( File ) Data : #2 \"i_generation\" ( File Version )")
+
+        print("\n========================================")
+
+        inode_index = 0
+        delete_file_data_list = []
+
+        for delete_file_inode in self.delete_file_inode_i_generations :
+            
+            for item in delete_file_inode :
+                if 'i_index' in item :
+                    inode_index = item['i_index']
+
+                if 'i_generation' in item :
+                    i_generation_data = item['i_generation']
+                
+                # [ To Do ]
+
+            print(f"\n[ Delete File - Inode ] Index : {inode_index}")
+            
+            print(delete_file_inode)
+        
+        # print(delete_file_data_list)
 
         print("\n========================================")
 
     """
-    EXT4 - Delete Inode
+    EXT4 - Delete File - Inode
     """
-    def get_delete_inode(self, f) :
-        print("\n@( N ) EXT4 - Delete Inode")
+    def get_delete_file_inode(self, f) :
+        print("\n@( N + @ ) EXT4 - Delete File - Inode")
 
         print("\n========================================")
 
-        delete_inode = []
+        delete_file_inode = []
 
         inode_format = [
             (0x0, "H", "i_mode"),
@@ -861,9 +897,9 @@ class Ext4Parse :
 
             for item in list :
                 if 'bg_index' in item :
-                    inode_table_index = int(item['bg_index'])
+                    inode_table_index = item['bg_index']
                 if 'bg_inode_table' in item :
-                    bg_inode_bitmap_data = int(item['bg_inode_table'])
+                    bg_inode_bitmap_data = item['bg_inode_table']
                     inode_table_offset = bg_inode_bitmap_data * self.block_size
 
             # print(f"[ DEBUG ] Inode Table Offset : {inode_table_offset}")
@@ -877,7 +913,7 @@ class Ext4Parse :
 
                 inode = []
 
-                inode.append({"i_index" : f"{index}"})
+                inode.append({"i_index" : index})
 
                 for field_offset, field_format, field_name in inode_format :
                     field_size = struct.calcsize(field_format)
@@ -889,29 +925,33 @@ class Ext4Parse :
                     if field_name == "i_block" :
                         inode.append({field_name : field_data})
                         continue
+                    if field_name == "i_generation" :
+                        inode.append({field_name : field_data})
+                        continue
                             
                 for item in inode :
                     if 'i_dtime' in item :
-                        i_dtime_data = int(item['i_dtime'])
+                        i_dtime_data = item['i_dtime']
 
                         if i_dtime_data != 0 :
                             print(inode)
 
-                            delete_inode.append(inode)
+                            delete_file_inode.append(inode)
 
         print("\n========================================")
 
-        delete_inode_direct_blocks = []
+        delete_file_inode_direct_blocks = []
+        delete_file_inode_i_generations = []
 
-        for inode in delete_inode :
-            # print("Delete Inode - \"i_block\"")
+        for inode in delete_file_inode :
+            # print("Delete File - Inode - \"i_block\"")
 
-            delete_inode_direct_block_entry = []
+            delete_file_inode_direct_block_entry = []
 
             for item in inode :
                 if 'i_index' in item :
-                    delete_inode_index = int(item['i_index'])
-                    delete_inode_direct_block_entry.append({"i_index" : f"{delete_inode_index}"})
+                    delete_file_inode_index = item['i_index']
+                    delete_file_inode_direct_block_entry.append({"i_index" : delete_file_inode_index})
 
             i_block_data = 0
             direct_block_data = 0
@@ -930,18 +970,46 @@ class Ext4Parse :
                 # print(f"[ DEBUG ] Direct Block Data ( Before ) : {direct_block_data_before}")
 
                 if direct_block_data != 0 :
-                    delete_inode_direct_block_entry.append({"db_index" : f"{index}"})
-                    delete_inode_direct_block_entry.append({"db_data" : f"{direct_block_data}"})
+                    delete_file_inode_direct_block_entry.append({"db_index" : index})
+                    delete_file_inode_direct_block_entry.append({"db_data" : direct_block_data})
+
+            delete_file_inode_direct_blocks.append(delete_file_inode_direct_block_entry)
             
-            delete_inode_direct_blocks.append(delete_inode_direct_block_entry)
+            # print("Delete File - Inode - \"i_generation\"")
 
-        # print(delete_inode_direct_blocks)
+            delete_file_inode_i_generation = []
 
-        self.delete_inode_direct_blocks = delete_inode_direct_blocks
+            for item in inode :
+                if 'i_index' in item :
+                    delete_file_inode_index = item['i_index']
+                    delete_file_inode_i_generation.append({"i_index" : delete_file_inode_index})
 
-        # [ N + 1 ] Delete Inode - File Data
-        self.get_delete_inode_file_data(f)
+            for item in inode :
+                if 'i_generation' in item :
+                    i_generation_data = item['i_generation']
+                    delete_file_inode_i_generation.append({"i_generation" : i_generation_data})
+
+            delete_file_inode_i_generations.append(delete_file_inode_i_generation)
+
+        # print(delete_file_inode_direct_blocks)
+        # print(delete_file_inode_i_generations)
+
+        self.delete_file_inode_direct_blocks = delete_file_inode_direct_blocks
+        self.delete_file_inode_i_generations = delete_file_inode_i_generations        
                             
+    """
+    EXT4 - Delete File
+    """
+    def get_delete_file(self, f) :
+        # [ N + @ ] Delete File - Inode
+        self.get_delete_file_inode(f)
+
+        # [ N + @ ] Delete File - ( File ) Data : #1 Direct Block
+        self.get_delete_file_data_direct_block(f)
+
+        # [ N + @ ] Delete File - ( File ) Data : #2 "i_generation" ( File Version )
+        self.get_delete_file_data_i_generation(f)
+
     """
     """
 
@@ -961,14 +1029,13 @@ class Ext4Parse :
 
             # ( ... )
 
-            # [ N ] Delete Inode
-            # [ N + 1 ] Delete Inode - File Data
-            self.get_delete_inode(f)
+            # [ N ] Journal
+            self.get_journal(f)
 
             # ( ... )
 
-            # [ N + @ ] Journal
-            self.get_journal(f)
+            # [ N + @ ] Delete File
+            self.get_delete_file(f)
 
             # ( ... )
 
