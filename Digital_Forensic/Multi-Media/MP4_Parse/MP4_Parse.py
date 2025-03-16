@@ -89,7 +89,7 @@ class MP4Parse :
 
         space = self.print_space(depth - 1)
         print(f"\n{space}( Container ) Box Type : {box_type.decode()}")
-        print(f"{space}[ + ] ( Container ) Box Size : {box_size}")
+        print(f"{space}[ + ] ( Container ) Box Size : {box_size + 8}")
         print(f"{space}[ + ] ( Container ) Box Offset : {self.print_hex(box_offset)}")
 
         while f.tell() < end_offset :
@@ -115,7 +115,38 @@ class MP4Parse :
     """
     """
     def get_codec(self, f) :
-        print()
+        print("\nMP4 File - Codecs")
+        print("\n========================================")
+
+        for box in self.box_list :
+            for key in box :
+                if key == b'stsd' :
+                    stsd_data_box = box[key]
+
+                    stsd_size = stsd_data_box[0]
+                    stsd_offset = stsd_data_box[1]
+
+                    f.seek(stsd_offset)
+                    stsd_data = f.read(stsd_size)
+
+                    # print(f"[ DEBUG ] \"stsd\" Data ( {key} ) : {stsd_size} | {stsd_offset}")
+                    # print(f">>>> {stsd_data}")
+
+                    # "stsd"
+                    stsd_version = stsd_data[0:1]
+                    stsd_flag = stsd_data[1:4]
+                    stsd_entry_count = stsd_data[4:8]
+                    
+                    # Codec
+                    codec_data_size = struct.unpack(">I", stsd_data[8:12])[0]
+                    codec_data = stsd_data[8:(8 + codec_data_size)]
+                    codec_name = stsd_data[12:16]
+
+                    print(f"\nCodec Name ( \"stsd\" ) : {codec_name.decode()}")
+                    print("Codec Data ( \"stsd\" )")
+                    print(f"{codec_data}")
+        
+        print("\n========================================")
     
     """
     MP4
