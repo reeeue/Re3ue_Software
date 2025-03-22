@@ -248,6 +248,128 @@ class FAT32Parse :
 
         fsinfo_offset = self.get_boot_sector(f)
         self.get_fsinfo(f, fsinfo_offset)
+
+    """
+    FAT32 - FAT Area
+    """
+    def get_fat_area(self, f) :
+        print("\n# FAT32 - FAT Area")
+        print(f"  >>>> Sector : {self.fat_area_sector}")
+        print(f"  >>>> ( Back Up ) Sector : {self.backup_fat_area_sector}\n")
+
+        f.seek(self.fat_area_offset)
+
+        media_type = f.read(4)
+        partition_status = f.read(4)
+
+        print(f"[ + ] Media Type : {" ".join(f"{byte:02X}" for byte in media_type)}")
+        print(f"[ + ] Partition Status : {" ".join(f"{byte:02X}" for byte in partition_status)}")
+        print("    ( ... )")
+    
+    """
+    FAT32 - Data Area - ( Root Directory ) - Directory - Attributes
+    """
+    def get_directory_entry_attribute(self, attributes) :
+        attribute_types = {
+            0x01 : "Read Only",
+            0x02 : "Hidden File",
+            0x04 : "System File",
+            0x08 : "Volume Label",
+            0x0F : "Long File Name",
+            0x10 : "Directory",
+            0x20 : "Archive"
+        }
+
+        return attribute_types.get(attributes)
+
+    """
+    FAT32 - Data Area - ( Root Directory ) - Directory
+    """
+    def get_directory(self, f, directory_offset) :
+        f.seek(directory_offset)
+
+        cluster_size = self.sectors_per_cluster * self.bytes_per_sector
+        directory_entries = f.read(cluster_size)
+
+        for index in range(0, cluster_size, 32) :
+            directory_entry = directory_entries[index:index+32]
+
+            # Status : Empty
+            if directory_entry[0] == 0x00 :
+                break
+
+            # Status : Deleted
+            if directory_entry[0] == 0xE5 :
+                continue
+
+            file_name = directory_entry[0:8]
+            extension = directory_entry[8:11]
+            attributes = directory_entry[11]
+            reserved_area = directory_entry[12:14]
+            created_time = directory_entry[14:16]
+            created_date = directory_entry[16:18]
+            last_accessed_date = directory_entry[18:20]
+            starting_cluster_high = directory_entry[20:22]
+            last_modified_time = directory_entry[22:24]
+            last_modified_date = directory_entry[24:26]
+            starting_cluster_low = directory_entry[26:28]
+            file_size = directory_entry[28:32]
+
+            attribute = self.get_directory_entry_attribute(attributes)
+
+            # print(f"[ DEBUG ] Index : {index}")
+            # print(f"[ + ] File Name : {file_name}")
+            # print(f"[ + ] Extension : {extension}")
+            # print(f"[ + ] Attribute : {attribute}")
+            # print("    ( ... )")
+            # print(f"[ + ] Created Time / Created Date : {created_time} / {created_date}")
+            # print("    ( ... )")
+            # print(f"[ + ] Last Accessed Date : {last_accessed_date}")
+            # print(f"[ + ] Last Modified Time / Last Modified Date : {last_modified_time} / {last_modified_date}")
+            # print("    ( ... )")
+            # print(f"[ + ] File Size : {file_size}")
+            # print()
+
+            # [ 1 ] Attribute : Long File Name
+
+            if attribute == "Long File Name" :
+                long_file_name = directory_entry[1:11] + directory_entry[14:26] + directory_entry[28:32]
+                full_file_name = long_file_name.decode(errors='ignore')
+
+            else :                    
+                file_name = file_name.decode(errors='ignore').strip()
+                extension = extension.decode(errors='ignore').strip()
+
+                if extension :
+                    full_file_name = f"{file_name}.{extension}"
+                else :
+                    full_file_name = f"{file_name}"
+
+            # [ 2 ] Attribute : Directory
+
+            if attribute == "Directory" and full_file_name not in [".", ".."] :
+                start_cluster = int.from_bytes(starting_cluster_low, 'little') | (int.from_bytes(starting_cluster_high, 'little') << 16)
+                start_cluster_offset = (self.data_area_sector + (start_cluster - 2) * self.sectors_per_cluster) * self.bytes_per_sector
+
+                print("[ DEBUG ] Enter a Directory Cluster")
+                self.get_directory(f, start_cluster_offset)
+            
+            else :
+                self.file_list.append(full_file_name)
+
+    """
+    FAT32 - Data Area
+    """
+    def get_data_area(self, f) :
+        print("\n# FAT32 - Data Area")
+        print(f"  >>>> Sector : {self.data_area_sector}\n")
+
+        f.seek(self.data_area_offset)
+
+        self.get_directory(f, self.root_directory_offset)
+
+        print(f"[ + ] File List : {", ".join(self.file_list)}")
+        print(f"[ + ] Total Number of Files : {len(self.file_list)}")
     
     """
     """
@@ -271,6 +393,12 @@ class FAT32Parse :
                     self.reserved_area_sector = self.partition_fat32_sector
                     self.reserved_area_offset = self.partition_fat32_offset
                     self.get_reserved_area(f)
+
+                    # [ 2 ] FAT Area
+                    self.get_fat_area(f)
+
+                    # [ 3 ] Data Area
+                    self.get_data_area(f)
 
         print("\nProgram End.")
 
